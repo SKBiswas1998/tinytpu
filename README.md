@@ -214,7 +214,7 @@ Token 2: Compute K,V for position 1 only, append
 - [x] GPT-2 inference
 - [x] KV-cache optimization
 - [x] Benchmark suite (faster than PyTorch!)
-- [ ] INT8 quantization
+- [x] INT8 quantization (75% memory reduction)
 - [ ] Larger models (TinyLlama, Phi-2)
 - [ ] FPGA deployment
 - [ ] PyPI package
@@ -228,3 +228,5 @@ MIT License - feel free to use for learning and research!
 - Google TPU architecture papers
 - HuggingFace for model weights
 - The open-source hardware community
+
+
