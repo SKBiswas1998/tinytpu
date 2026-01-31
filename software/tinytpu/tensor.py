@@ -19,7 +19,7 @@ class TinyTensor:
             self.data = np.array(data, dtype=np.float32)
         
         if tpu is None:
-            from tinytpu import TinyTPU
+            from tinytpu.unified_backend import TinyTPU
             self._tpu = TinyTPU(backend="simulator")
         else:
             self._tpu = tpu
@@ -672,3 +672,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("ALL TENSOR OPERATIONS WORKING!")
     print("=" * 60)
+
