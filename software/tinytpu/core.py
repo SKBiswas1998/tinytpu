@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Optional, Literal
+from typing import Optional, Union, Literal
 from .backends import SimulatorBackend, FPGABackend
 
 class TinyTPU:
@@ -21,14 +21,49 @@ class TinyTPU:
     def backend_name(self) -> str:
         return self._backend.name
     
-    def matmul(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
-        A = A.astype(np.int8)
-        B = B.astype(np.int8)
+    def _to_numpy(self, x) -> np.ndarray:
+        """Convert input to numpy array."""
+        if x is None:
+            raise TypeError("Input cannot be None")
+        if isinstance(x, np.ndarray):
+            return x
+        return np.array(x)
+    
+    def _validate_int8(self, x: np.ndarray, name: str) -> np.ndarray:
+        """Validate and convert to INT8 with range checking."""
+        if x.dtype in [np.float32, np.float64, np.float16]:
+            if np.any(x < -128) or np.any(x > 127):
+                raise ValueError(f"{name} has values outside INT8 range [-128, 127]")
+        x = x.astype(np.int8)
+        return x
+    
+    def matmul(self, A, B) -> np.ndarray:
+        """Matrix multiplication with input validation."""
+        # Convert to numpy
+        A = self._to_numpy(A)
+        B = self._to_numpy(B)
+        
+        # Validate dimensions
+        if A.ndim != 2:
+            raise ValueError(f"A must be 2D, got {A.ndim}D")
+        if B.ndim != 2:
+            raise ValueError(f"B must be 2D, got {B.ndim}D")
         if A.shape[1] != B.shape[0]:
             raise ValueError(f"Incompatible shapes: A{A.shape} @ B{B.shape}")
+        
+        # Handle empty matrices
+        if A.size == 0 or B.size == 0:
+            return np.zeros((A.shape[0], B.shape[1]), dtype=np.int32)
+        
+        # Convert to int8
+        A = self._validate_int8(A, "A")
+        B = self._validate_int8(B, "B")
+        
         M, K = A.shape
         K2, N = B.shape
         C = np.zeros((M, N), dtype=np.int32)
+        
+        # Tiled matmul
         for i in range(0, M, self.array_size):
             for j in range(0, N, self.array_size):
                 for k in range(0, K, self.array_size):
