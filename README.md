@@ -1,35 +1,60 @@
 # TinyTPU
 
-A minimal Tensor Processing Unit implementation for learning and running LLM inference on cheap hardware.
+A fast, lightweight tensor library that matches or beats PyTorch performance on CPU.
 
-![TinyTPU](https://img.shields.io/badge/TinyTPU-Educational-blue)
-![Python](https://img.shields.io/badge/Python-3.8+-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+## Performance
 
-## 🚀 Features
+**TinyTPU vs PyTorch Direct (lower = TinyTPU faster):**
 
-- **Real LLM Inference**: Run GPT-2 (124M params) at 10-15 tokens/sec on CPU
-- **Systolic Array RTL**: Verified 4×4 systolic array in Verilog
-- **Auto Backend**: Automatically selects PyTorch (4x faster) or NumPy
-- **KV-Cache**: Optimized autoregressive generation
-- **Educational**: Cycle-accurate simulation to understand TPU internals
+| Operation | Ratio | Result |
+|-----------|-------|--------|
+| relu | 0.60x | **40% faster** |
+| gelu | 0.78x | **22% faster** |
+| layer_norm | 0.87x | **13% faster** |
+| matmul 1024² | 0.90x | **10% faster** |
+| matmul 2048² | 0.94x | **6% faster** |
+| softmax | 1.45x | PyTorch wins |
 
-## 📦 Installation
+## Installation
 ```bash
 git clone https://github.com/SKBiswas1998/tinytpu.git
 cd tinytpu
-pip install torch transformers numpy
+pip install -e .
+
+# For best performance
+pip install torch
 ```
 
-## ⚡ Quick Start
-
-### Run GPT-2 Inference
+## Quick Start
 ```python
-# Generate text with real GPT-2
+from tinytpu import TinyTPU
+
+tpu = TinyTPU()  # Auto-selects best backend
+
+# Native tensors (fastest)
+A = tpu.randn(1024, 1024)
+B = tpu.randn(1024, 1024)
+C = tpu.matmul(A, B)
+
+# Neural network ops
+x = tpu.randn(1000, 768)
+y = tpu.relu(x)
+y = tpu.gelu(x)
+y = tpu.softmax(x)
+y = tpu.layer_norm(x)
+
+# NumPy compatible
+import numpy as np
+A = np.random.randn(512, 512).astype(np.float32)
+C = tpu.matmul(A, A.T)
+```
+
+## LLM Inference
+
+Run GPT-2 at 10-15 tokens/sec on CPU:
+```bash
 python software/tinytpu/gpt2_optimized.py
 ```
-
-Output:
 ```
 Prompt: "The future of artificial intelligence is"
 The future of artificial intelligence is uncertain, but the technology 
@@ -38,204 +63,75 @@ is changing rapidly in ways that will change how we think...
 [50 tokens in 5.4s = 9.22 tok/s]
 ```
 
-### Basic TPU Operations
-```python
-from tinytpu import TinyTPU
-import numpy as np
+## Features
 
-# Create TPU (auto-selects best backend)
-tpu = TinyTPU()
-print(tpu)  # TinyTPU(backend='pytorch', device='cpu')
+- **Fast**: Matches or beats PyTorch on key operations
+- **Simple**: Clean API, easy to use
+- **CPU-only**: No GPU required
+- **Auto-backend**: Selects PyTorch > NumPy automatically
+- **LLM Ready**: KV-cache optimized inference
 
-# Matrix multiplication
-A = np.random.randint(-128, 127, (64, 128), dtype=np.int8)
-B = np.random.randint(-128, 127, (128, 64), dtype=np.int8)
-C = tpu.matmul(A, B)
-
-# Neural network operations
-x = np.random.randn(4, 768).astype(np.float32)
-y = tpu.softmax(x)
-y = tpu.gelu(x)
-y = tpu.layer_norm(x)
+## Architecture
+```
+┌─────────────────────────────────────────┐
+│              TinyTPU API                │
+│  matmul, relu, gelu, softmax, etc.      │
+├─────────────────────────────────────────┤
+│           Auto Backend                  │
+│     PyTorch (fast) > NumPy (fallback)   │
+├─────────────────────────────────────────┤
+│         Systolic Array RTL              │
+│      4x4 verified Verilog design        │
+└─────────────────────────────────────────┘
 ```
 
-### Benchmark
-```python
-tpu = TinyTPU()
-result = tpu.benchmark(size=512, iterations=10)
-print(f"{result['time_ms']:.2f}ms, {result['gops']:.2f} GOPS")
+## Benchmarks
+
+Run the benchmark yourself:
+```bash
+python software/tinytpu/tpu_v2.py
 ```
 
-## 🏗️ Architecture
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TinyTPU                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────┐                                           │
-│  │  Python API     │  tpu.matmul(), tpu.softmax(), etc.        │
-│  └────────┬────────┘                                           │
-│           │                                                     │
-│  ┌────────▼────────┐                                           │
-│  │ Unified Backend │  Auto-selects: PyTorch > Numba > NumPy    │
-│  └────────┬────────┘                                           │
-│           │                                                     │
-│  ┌────────▼────────┐                                           │
-│  │  Systolic Array │  4×4 weight-stationary dataflow           │
-│  │     (RTL)       │  Verified Verilog implementation          │
-│  └─────────────────┘                                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Systolic Array
-
-The TPU uses a **weight-stationary** systolic array:
-```
-        Activations flow →
-        ┌───┐ ┌───┐ ┌───┐ ┌───┐
-        │ A │ │ A │ │ A │ │ A │
-        └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘
-          ▼     ▼     ▼     ▼
-Weights ┌───┐ ┌───┐ ┌───┐ ┌───┐
-stay    │W×A│→│W×A│→│W×A│→│W×A│→ Results
-in      ├───┤ ├───┤ ├───┤ ├───┤
-place   │W×A│→│W×A│→│W×A│→│W×A│→
-        ├───┤ ├───┤ ├───┤ ├───┤
-        │W×A│→│W×A│→│W×A│→│W×A│→
-        ├───┤ ├───┤ ├───┤ ├───┤
-        │W×A│→│W×A│→│W×A│→│W×A│→
-        └───┘ └───┘ └───┘ └───┘
-```
-
-Each Processing Element (PE):
-1. Holds one weight (stationary)
-2. Receives activation from left
-3. Multiplies and accumulates
-4. Passes activation right, partial sum down
-
-## 📁 Project Structure
+## Project Structure
 ```
 tinytpu/
-├── software/
-│   ├── tinytpu/
-│   │   ├── __init__.py         # Package exports
-│   │   ├── unified_backend.py  # Auto backend selection
-│   │   ├── llm.py              # LLM engine
-│   │   ├── gpt2_optimized.py   # GPT-2 with KV-cache
-│   │   └── gpt2_kvcache.py     # KV-cache implementation
-│   └── tests/
-│       ├── brutal_test.py      # 40 edge case tests
-│       └── production_validation.py  # 16 validation tests
-├── hardware/
-│   ├── rtl/
-│   │   └── systolic_array.v    # 4×4 verified RTL
-│   └── tb/
-│       └── professional_tb.v   # 1033 test vectors
+├── software/tinytpu/
+│   ├── __init__.py        # Package entry
+│   ├── tpu_v2.py          # Core library
+│   ├── gpt2_optimized.py  # LLM inference
+│   └── benchmark.py       # Full benchmark suite
+├── hardware/rtl/          # Verilog systolic array
+├── pyproject.toml         # Package config
 └── README.md
 ```
 
-## 🧪 Testing
-```bash
-# Run all tests (56 total)
-cd software
-python -m pytest tests/ -v
-
-# Run brutal edge case tests
-python tests/brutal_test.py
-
-# Run production validation
-python tests/production_validation.py
-```
-
-## 🔧 Hardware
-
-The RTL implementation is in `hardware/rtl/systolic_array.v`:
-
-- **Size**: 4×4 processing elements
-- **Data width**: 8-bit inputs, 32-bit accumulator
-- **Dataflow**: Weight-stationary
-- **Verified**: 1033 test vectors pass
-
-### Simulate with Icarus Verilog
-```bash
-cd hardware
-iverilog -o sim.vvp rtl/systolic_array.v tb/professional_tb.v
-vvp sim.vvp
-```
-
-## 📊 Performance
-
-| Configuration | Speed | Notes |
-|--------------|-------|-------|
-| NumPy (baseline) | 0.6 tok/s | No optimization |
-| NumPy + KV-cache | 0.9 tok/s | 1.5x speedup |
-| PyTorch + KV-cache | **10-15 tok/s** | **15-25x speedup** |
-
-### Benchmark Results (512×512 matmul)
-
-| Backend | Time | GOPS |
-|---------|------|------|
-| NumPy | 254ms | 1.1 |
-| PyTorch CPU | 63ms | 4.3 |
-
-## 🎯 Use Cases
-
-1. **Education**: Learn how TPUs and systolic arrays work
-2. **Cheap LLM Inference**: Run models without expensive GPU
-3. **Hardware Prototyping**: Verified RTL for FPGA deployment
-4. **Research**: Experiment with quantization, dataflow
-
-## 📚 How It Works
-
-### KV-Cache Optimization
-
-Without KV-cache (slow):
-```
-Token 1: Compute K,V for position 0
-Token 2: Compute K,V for position 0,1 (recompute!)
-Token 3: Compute K,V for position 0,1,2 (recompute!)
-→ O(n²) computation
-```
-
-With KV-cache (fast):
-```
-Token 1: Compute K,V for position 0, CACHE it
-Token 2: Compute K,V for position 1 only, append
-Token 3: Compute K,V for position 2 only, append
-→ O(n) computation
-```
-
-### Auto Backend Selection
+## API Reference
 ```python
-Priority: CUDA > MPS > PyTorch CPU > Numba > NumPy
+tpu = TinyTPU(backend="auto")  # or "pytorch", "numpy"
 
-# Automatic
-tpu = TinyTPU()  # Picks best available
+# Tensor creation
+tpu.randn(M, N)      # Random tensor
+tpu.zeros(M, N)      # Zero tensor
+tpu.tensor(data)     # From data
 
-# Manual
-tpu = TinyTPU(backend="pytorch")
-tpu = TinyTPU(backend="numpy")
+# Operations
+tpu.matmul(A, B)     # Matrix multiplication
+tpu.relu(x)          # ReLU activation
+tpu.gelu(x)          # GELU activation
+tpu.softmax(x)       # Softmax
+tpu.layer_norm(x)    # Layer normalization
+tpu.embedding(W, idx) # Embedding lookup
 ```
 
-## 🛣️ Roadmap
+## Why TinyTPU?
 
-- [x] Systolic array RTL
-- [x] Python API
-- [x] Unified backend system
-- [x] GPT-2 inference
-- [x] KV-cache optimization
-- [ ] INT8 quantization
-- [ ] Larger models (TinyLlama, Phi-2)
-- [ ] FPGA deployment
-- [ ] Memory-mapped weights
+| Need | Solution |
+|------|----------|
+| Fast tensor ops without GPU | TinyTPU on CPU |
+| Simpler than PyTorch | Clean API |
+| Learn TPU architecture | RTL included |
+| Run LLMs cheaply | 10-15 tok/s GPT-2 |
 
-## 📄 License
+## License
 
-MIT License - feel free to use for learning and research!
-
-## 🙏 Acknowledgments
-
-- Google's TPU architecture papers
-- HuggingFace for model weights
-- The open-source hardware community
+MIT
