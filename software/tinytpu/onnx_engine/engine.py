@@ -134,12 +134,21 @@ class TinyTPUEngine:
     def _get_tensor(self, name: str, runtime_values: dict) -> np.ndarray:
         """Get tensor by name from initializers or runtime values."""
         if name in runtime_values:
-            return runtime_values[name]
+            t = runtime_values[name]
+            if isinstance(t, np.ndarray) and not t.flags.writeable:
+                t = t.copy()
+            return t
         if name in self._initializers:
             init = self._initializers[name]
             if init['quantized']:
                 return init['data'].astype(np.float32) * init['scale']
-            return init['data']
+            data = init['data']
+            # Cast float16 to float32
+            if hasattr(data, 'dtype') and data.dtype == np.float16:
+                return data.astype(np.float32)
+            if isinstance(data, np.ndarray) and not data.flags.writeable:
+                return data.copy()
+            return data
         raise ValueError(f"Tensor not found: {name}")
     
     def _get_attr(self, node, name, default=None):
@@ -169,9 +178,9 @@ class TinyTPUEngine:
     
     def _op_conv(self, node, values):
         """Convolution."""
-        X = self._get_tensor(node.input[0], values)
-        W = self._get_tensor(node.input[1], values)
-        B = self._get_tensor(node.input[2], values) if len(node.input) > 2 else None
+        X = self._get_tensor(node.input[0], values).astype(np.float32)
+        W = self._get_tensor(node.input[1], values).astype(np.float32)
+        B = self._get_tensor(node.input[2], values).astype(np.float32) if len(node.input) > 2 and node.input[2] else None
         
         pads = self._get_attr(node, 'pads', [0,0,0,0])
         strides = self._get_attr(node, 'strides', [1,1])
@@ -724,3 +733,5 @@ if __name__ == "__main__":
     print("Usage:")
     print("  engine = TinyTPUEngine('model.onnx')")
     print("  output = engine.run({'input': data})")
+
+
