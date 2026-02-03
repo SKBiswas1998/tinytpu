@@ -1,0 +1,40 @@
+# TinyTPU ROS2 Configuration
+# ==========================
+
+vision:
+  model: "yolov5n.onnx"          # YOLO model for detection
+  input_topic: "/camera/image_raw"
+  output_topic: "/tinytpu/detections"
+  image_output: "/tinytpu/annotated_image"
+  confidence_threshold: 0.4
+  nms_threshold: 0.45
+  image_size: 640
+  quantize: false                  # INT8 quantization (saves 75% memory)
+  rate: 10                         # Max FPS
+
+llm:
+  model: "gpt2"                    # Default model (can use tiny_starcoder_py)
+  input_topic: "/tinytpu/llm_input"
+  output_topic: "/tinytpu/llm_output"
+  max_tokens: 50
+  temperature: 0.7
+  use_kv_cache: true
+
+brain:
+  detection_topic: "/tinytpu/detections"
+  command_topic: "/cmd_vel"
+  llm_topic: "/tinytpu/llm_input"
+  mode: "follow_person"            # follow_person, avoid_obstacles, explore
+  
+  # Object priorities (what to react to)
+  priority_objects:
+    - person
+    - cat
+    - dog
+    - car
+    - stop sign
+
+  # Safety
+  min_distance: 0.5                # meters
+  max_speed: 0.3                   # m/s
+  max_angular: 0.5                 # rad/s
