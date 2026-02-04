@@ -530,6 +530,83 @@ In the default `ProductionEdgeAI` configuration, unusable frames trigger a black
 
 ---
 
+## Numerical Methods
+
+Three algorithms from Killingbeck's *Microcomputer Algorithms* (1991), adapted for edge AI quantization and inference.
+
+### Richardson Extrapolation (Residual Compensation)
+
+Quantized matrix multiplication loses accuracy from rounding. Instead of moving to FP16 (2x memory), residual compensation runs three INT8 matmuls to cancel the leading quantization error:
+````python
+from numerical_methods import QuantizationExtrapolator
+
+qe = QuantizationExtrapolator(bits_high=8, bits_low=4)
+result = qe.extrapolated_matmul(weights, activations)
+
+# How it works:
+#   Pass 1: C_main = quant(A) @ quant(B)           (standard INT8)
+#   Pass 2: C_corr = quant(A) @ quant(residual_B)  (error correction)
+#          + quant(residual_A) @ quant(B)
+#   Result: C_main + C_corr                         (error cancelled)
+
+# Measured results (128x128 matrices):
+#   INT8 alone:    0.129 relative error
+#   With residual: 0.001 relative error  (128x improvement)
+#   512x512:       correlation 0.99999999 vs FP32 ground truth
+#   Cost:          3x INT8 compute, 0x extra memory
+````
+
+The key insight from Killingbeck ch.3: Richardson extrapolation eliminates leading error terms by computing at two precision levels. For quantization, the "residuals" (what rounding discarded) have ~255x smaller dynamic range, so requantizing them to INT8 gives much finer granularity for the correction pass.
+
+### Iterative Eigenvalue Decomposition (HITTER)
+
+Finds eigenvalues without storing the full matrix. Elements are computed on-the-fly via a function `H(i,j)`, using O(N) memory instead of O(N^2). Based on Killingbeck ch.6, equations 6.52-6.53.
+````python
+from numerical_methods import IterativeEigen
+
+# On-device PCA: 200 samples, 50 features -> 3 components
+eigen = IterativeEigen(dim=50, matrix=covariance_matrix)
+transformed, components = eigen.pca_transform(data, n_components=3)
+
+# Or with element function (no matrix stored):
+def cov_element(i, j):
+    return compute_covariance(i, j)  # on-the-fly from raw data
+
+eigen = IterativeEigen(dim=512, element_fn=cov_element)
+eigenvalues, eigenvectors = eigen.find_eigenvalues(k=10, which="largest")
+
+# Memory comparison (512-dim features):
+#   Full SVD:  512x512x4 = 1.0 MB covariance + workspace
+#   HITTER:    512x4 = 2 KB per eigenvector + element function
+#   Savings:   ~500x
+````
+
+### Fast Activations (Horner's Method)
+
+Polynomial approximations of GELU, Sigmoid, and Tanh using nested multiplication (Killingbeck ch.4). Degree-N Horner form uses N multiplications vs N(N+1)/2 for naive polynomial evaluation.
+````python
+from numerical_methods import FastActivations
+
+y = FastActivations.gelu_poly(x)      # degree-11, max error 0.007
+y = FastActivations.sigmoid_poly(x)   # degree-7,  max error 0.008
+y = FastActivations.tanh_poly(x)      # degree-9,  max error 0.006
+y = FastActivations.softmax_fast(x)   # log-sum-exp stable
+
+# On ARM/RPi these avoid transcendental function calls entirely.
+# Coefficients computed via numpy.polyfit on 10,000 sample points.
+````
+
+### Integration: Richardson + Activations
+
+The two techniques compose: Richardson-corrected matmul feeds into polynomial activations for an end-to-end quantized inference path.
+````python
+# Measured end-to-end (W @ X -> GELU):
+#   INT8 + exact GELU:         0.023 error
+#   Richardson + poly GELU:    0.001 error  (18.8x improvement)
+````
+
+---
+
 ## Benchmarks
 
 ### Core Engine
@@ -697,7 +774,7 @@ At 2-3 FPS, additional techniques become essential:
 
 ## Testing
 
-The project includes two comprehensive test suites:
+The project includes three test suites:
 
 ```bash
 # Core toolkit tests (78 tests)
@@ -724,9 +801,18 @@ python test_v2.py
 #   Production integration (sync mode, e-stop, full status)
 #   Kalman accuracy (30 Hz from 2 FPS, position error measurement)
 #   Real image detection (COCO bus.jpg, person + bus detection)
+
+# Numerical methods tests (47 tests)
+python test_numerical.py
+#   Richardson extrapolation (weights, roundtrip, matmul 32-512px, correlation)
+#   Residual compensation (128x improvement over INT8, 0.99999999 correlation)
+#   HITTER eigenvalues (5x5 symmetric, tridiagonal, element function mode)
+#   On-device PCA (200x50 -> 3 components, 74.8% variance captured)
+#   Polynomial activations (GELU/Sigmoid/Tanh accuracy and benchmarks)
+#   Integration (Richardson + GELU end-to-end, 18.8x improvement)
 ```
 
-Current results: **161 tests, 159 passing (99%)**. Two known non-critical failures: quality scorer sample count edge case and Kalman convergence timing (error already below threshold).
+Current results: **208 tests, 206 passing (99%)**. Two known non-critical failures: quality scorer sample count edge case and Kalman convergence timing (error already below threshold).
 
 ---
 
@@ -744,11 +830,13 @@ tinytpu/
 |   |   |-- onnx_engine.py       # Pure-Python ONNX runtime (50+ ops)
 |   |   |-- edge_ai.py           # Toolkit: hardware detect, model zoo, detection, control
 |   |   |-- edge_ai_v2.py        # Production: safety, tracking, async, debugging
+|   |   |-- numerical_methods.py # Richardson extrapolation, HITTER eigen, Horner activations
 |   |   |-- ros2_nodes.py        # ROS2 vision/brain/LLM nodes
 |-- docs/
 |   |-- images/                  # Architecture diagrams, benchmark charts
 |-- test_capabilities.py         # 78 toolkit tests
 |-- test_v2.py                   # 83 production layer tests
+|-- test_numerical.py            # 47 numerical methods tests
 |-- README.md
 |-- LICENSE
 ```
@@ -763,9 +851,10 @@ tinytpu/
 | 2. ONNX | Pure-Python ONNX engine, 50+ operators, backend auto-selection | Done |
 | 3. Perception | Hardware profiling, model zoo, YOLO detection, robot control | Done |
 | 4. Production | Safety controller, Kalman tracking, async pipeline, black box | Done |
-| 5. Advanced | NCNN backend, iceoryx shared memory, hardware watchdog, PREEMPT_RT | Planned |
+| 5. Numerical | Richardson extrapolation, iterative eigenvalues, Horner activations | Done |
+| 6. Advanced | NCNN backend, iceoryx shared memory, hardware watchdog, PREEMPT_RT | Planned |
 
-Phase 5 targets:
+Phase 6 targets:
 
 | Feature | Priority | Impact |
 |---------|----------|--------|
