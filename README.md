@@ -5,8 +5,8 @@
 <h1 align="center">TinyTPU</h1>
 
 <p align="center">
-  <strong>Production Edge AI for Robots Without GPUs</strong><br>
-  From silicon architecture to safety-certified robot control in one <code>pip install</code>.
+  <strong>A complete AI inference stack — from silicon to safety-certified robot control.</strong><br>
+  Run LLMs, vision models, and autonomous robots on cheap hardware without a GPU.
 </p>
 
 <p align="center">
@@ -25,6 +25,18 @@
 
 ---
 
+## Key Capabilities
+
+- **199 GFLOPS peak** matrix multiply performance
+- **15 tokens/sec** GPT-2 text generation on CPU
+- **7.3 FPS** real-time YOLOv8n object detection (148ms, CPU)
+- **75% memory reduction** with INT8 quantization
+- **1.000 correlation** with ONNX Runtime (identical outputs)
+- **30 Hz control loop** with Kalman-predicted tracking
+- **4 hardware backends**: Hailo NPU, Coral TPU, ONNX Runtime, NumPy
+
+---
+
 ## Why TinyTPU?
 
 | Problem | TinyTPU Solution |
@@ -34,6 +46,10 @@
 | Ultralytics is AGPL (viral copyleft) | MIT + Apache 2.0 — free for commercial use |
 | Vision and control run at different speeds | Kalman prediction bridges 2 FPS vision → 30 Hz control |
 | No unified API across AI accelerators | One API across Hailo, Coral, GPU, and CPU |
+| PyTorch too heavy for edge | TinyTPU beats PyTorch on relu (40%), gelu (22%), layer_norm (13%) |
+| Need to learn TPU architecture? | Verified 4×4 systolic array RTL included |
+
+---
 
 ## Quick Start
 
@@ -41,7 +57,7 @@
 pip install tinytpu
 ```
 
-### 3-Line Inference
+### 3-Line Object Detection
 
 ```python
 import tinytpu
@@ -68,12 +84,42 @@ pipeline = Pipeline(
 pipeline.start()  # Camera → YOLO → Kalman → Safety → Motors at 30 Hz
 ```
 
+### GPT-2 Text Generation
+
+```python
+from software.tinytpu.gpt2_optimized import generate
+
+text = generate("The future of robotics is", max_tokens=50)
+print(text)  # 11-15 tokens/sec on CPU
+```
+
+### Basic TPU Operations
+
+```python
+from tinytpu import TinyTPU
+
+tpu = TinyTPU()  # Auto-selects best backend
+
+# Native tensors (fastest)
+A = tpu.randn(1024, 1024)
+B = tpu.randn(1024, 1024)
+C = tpu.matmul(A, B)
+
+# Neural network ops (faster than PyTorch!)
+x = tpu.randn(1000, 768)
+y = tpu.relu(x)      # 40% faster than PyTorch
+y = tpu.gelu(x)      # 22% faster than PyTorch
+y = tpu.layer_norm(x) # 13% faster than PyTorch
+```
+
 ### Live Webcam Demo
 
 ```bash
 python demo_e2e.py --camera 0          # Live detection + tracking
 python demo_e2e.py --image photo.jpg   # Single image detection
 ```
+
+---
 
 ## CLI Tools
 
@@ -87,7 +133,62 @@ tinytpu backends          # Show available inference backends
 tinytpu version           # Version and dependency info
 ```
 
+---
+
+## Benchmarks
+
+### Matrix Multiply
+
+| Size | Time | GFLOPS |
+|------|------|--------|
+| 128×128 | 0.15ms | 28.3 |
+| 256×256 | 0.32ms | 104.7 |
+| 512×512 | 1.78ms | 150.8 |
+| 1024×1024 | 10.78ms | **199.2** |
+| 2048×2048 | 200.4ms | 85.7 |
+
+### Neural Operations vs PyTorch (1000×768)
+
+| Operation | TinyTPU | PyTorch | Speedup |
+|-----------|---------|---------|---------|
+| relu | 0.34ms | 0.57ms | **1.7×** |
+| gelu | 1.24ms | 1.59ms | **1.3×** |
+| layer_norm | 1.83ms | 2.10ms | **1.1×** |
+| softmax | 1.44ms | 1.35ms | 0.9× |
+
+### Model Inference
+
+| Model | Task | TinyTPU | ONNX Runtime | Correlation |
+|-------|------|---------|-------------|-------------|
+| YOLOv8n | Detection | 7.3 FPS (148ms) | — | — |
+| MobileNetV2 | Classification | 13.3 FPS | 171 FPS | **1.000000** |
+| YOLOv5-nano | Detection | 3.1 FPS | 11.5 FPS | **1.000000** |
+| GPT-2 124M | Generation | 15 tok/s | — | — |
+
+### LLM Inference
+
+| Configuration | Speed | Notes |
+|--------------|-------|-------|
+| NumPy (baseline) | 0.6 tok/s | No optimization |
+| NumPy + KV-cache | 0.9 tok/s | 1.5× speedup |
+| PyTorch + KV-cache | **10-15 tok/s** | **15-25× speedup** |
+
+### Edge AI Performance
+
+| Platform | Backend | YOLOv8n | FPS | Power |
+|----------|---------|---------|-----|-------|
+| Intel i7-10510U | ONNX Runtime CPU | 148ms | 7.3 | 15W |
+| Raspberry Pi 5 | Hailo-8L NPU | ~15ms | ~70 | 5W |
+| Raspberry Pi 5 | CPU only | ~500ms | ~2 | 5W |
+| Coral USB | Edge TPU | ~30ms | ~33 | 2W |
+
+*Pi 5 + Hailo figures are projected based on published benchmarks.*
+
+---
+
 ## Architecture
+
+### Pipeline Architecture
 
 ```
 Camera Frame (7-30 FPS)
@@ -116,6 +217,40 @@ Camera Frame (7-30 FPS)
 Motor Commands (30 Hz, safety-filtered)
 ```
 
+### Software Stack
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         TinyTPU                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────┐                                           │
+│  │  Python API     │  tpu.matmul(), tpu.softmax(), etc.        │
+│  └────────┬────────┘                                           │
+│           │                                                     │
+│  ┌────────▼────────┐                                           │
+│  │ Unified Backend │  Auto-selects: PyTorch > NumPy > ONNX RT  │
+│  └────────┬────────┘                                           │
+│           │                                                     │
+│  ┌────────▼──────────────────────────────┐                     │
+│  │  HAL: Hailo │ Coral │ ONNX RT │ NumPy │                     │
+│  └────────┬──────────────────────────────┘                     │
+│           │                                                     │
+│  ┌────────▼────────┐                                           │
+│  │ Systolic Array  │  4×4 PE array, weight-stationary          │
+│  │ (RTL/Sim)       │  Verilog, 1033 test vectors               │
+│  └─────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Systolic Array
+
+Each Processing Element (PE):
+1. Holds one weight (stationary)
+2. Receives activation from left
+3. Multiplies and accumulates
+4. Passes activation right, partial sum down
+
 ### Hardware Abstraction Layer
 
 TinyTPU auto-detects and prioritizes AI accelerators:
@@ -136,30 +271,27 @@ session = backend.load("model.onnx")            # Load model
 outputs = backend.run(session, {"images": x})   # Run inference
 ```
 
-## Installation Options
+---
 
-```bash
-pip install tinytpu                    # Core (NumPy only)
-pip install tinytpu[inference]         # + ONNX Runtime
-pip install tinytpu[vision]            # + OpenCV
-pip install tinytpu[robotics]          # Full robot stack
-pip install tinytpu[dashboard]         # + FastAPI web UI
-pip install tinytpu[all]               # Everything
-pip install tinytpu[dev]               # + pytest, ruff
+## KV-Cache Optimization
+
+Without KV-cache (slow):
+```
+Token 1: Compute K,V for position 0
+Token 2: Compute K,V for position 0,1 (recompute!)
+Token 3: Compute K,V for position 0,1,2 (recompute!)
+→ O(n²) computation
 ```
 
-## Model Zoo
+With KV-cache (fast):
+```
+Token 1: Compute K,V for position 0, CACHE it
+Token 2: Compute K,V for position 1 only, append
+Token 3: Compute K,V for position 2 only, append
+→ O(n) computation
+```
 
-| Model | Task | Size | Best For |
-|-------|------|------|----------|
-| `yolov8n` | Detection | 6.2 MB | Raspberry Pi, real-time |
-| `yolov8s` | Detection | 22 MB | Hailo NPU, balanced |
-| `yolov8m` | Detection | 52 MB | GPU, high accuracy |
-| `yolov8n-pose` | Pose | 6.7 MB | Human keypoints |
-| `yolov8n-seg` | Segmentation | 6.8 MB | Instance masks |
-| `mobilenetv2` | Classification | 14 MB | Image classification |
-
-Models auto-download on first use and cache locally.
+---
 
 ## Key Features
 
@@ -176,9 +308,8 @@ safety = SafetyController(
     ramp_rate=0.5,        # Max acceleration
 )
 
-# E-stop: immediate zero, requires manual reset
-safety.estop("obstacle_detected")
-safety.reset()
+safety.estop("obstacle_detected")  # Immediate zero
+safety.reset()                     # Manual reset required
 ```
 
 ### Kalman Tracking
@@ -188,50 +319,123 @@ SORT-style multi-object tracking bridges the vision-control frequency gap:
 from tinytpu.perception import ObjectTracker
 
 tracker = ObjectTracker(iou_threshold=0.3, min_hits=2)
-tracks = tracker.update(detections)  # Returns confirmed tracks with IDs
+tracks = tracker.update(detections)
 
 for track in tracks:
     print(f"ID:{track.track_id} {track.class_name} vel={track.kalman.velocity}")
 ```
 
+### ONNX Engine (50+ Operators)
+Pure-Python ONNX runtime as universal fallback:
+
+```python
+from tinytpu.inference.engine import TinyTPUEngine
+
+engine = TinyTPUEngine("model.onnx")
+outputs, stats = engine.run({"input": tensor})
+```
+
+### INT8 Quantization
+75% memory reduction with Richardson extrapolation for accuracy recovery:
+
+```python
+engine = TinyTPUEngine("mobilenetv2.onnx", quantize=True)
+# FP32: 13.3MB → INT8: 3.4MB
+```
+
 ### Numerical Methods
-Adapted from Killingbeck (1991) for quantized edge inference:
+Adapted from Killingbeck, *Microcomputer Algorithms* (1991):
 
 - **Richardson Extrapolation**: 128× accuracy improvement over plain INT8
 - **HITTER Eigendecomposition**: On-device PCA with 500× memory savings
 - **Horner-form Activations**: Polynomial approximations for INT8-friendly inference
 
-## Performance
+---
 
-| Platform | Backend | Inference | FPS | Power |
-|----------|---------|-----------|-----|-------|
-| Intel i7-10510U | ONNX Runtime CPU | 148 ms | 7.3 | 15W |
-| Raspberry Pi 5 | Hailo-8L NPU | ~15 ms | ~70 | 5W |
-| Raspberry Pi 5 | CPU only | ~500 ms | ~2 | 5W |
-| Coral USB | Edge TPU | ~30 ms | ~33 | 2W |
+## Model Zoo
 
-*Pi 5 + Hailo figures are projected based on published benchmarks.*
+| Model | Task | Size | Best For |
+|-------|------|------|----------|
+| `yolov8n` | Detection | 6.2 MB | Raspberry Pi, real-time |
+| `yolov8s` | Detection | 22 MB | Hailo NPU, balanced |
+| `yolov8m` | Detection | 52 MB | GPU, high accuracy |
+| `yolov8n-pose` | Pose | 6.7 MB | Human keypoints |
+| `yolov8n-seg` | Segmentation | 6.8 MB | Instance masks |
+| `mobilenetv2` | Classification | 14 MB | Image classification |
+
+Models auto-download on first use and cache locally.
+
+---
+
+## Installation Options
+
+```bash
+pip install tinytpu                    # Core (NumPy only)
+pip install tinytpu[inference]         # + ONNX Runtime
+pip install tinytpu[vision]            # + OpenCV
+pip install tinytpu[robotics]          # Full robot stack
+pip install tinytpu[dashboard]         # + FastAPI web UI
+pip install tinytpu[all]               # Everything
+pip install tinytpu[dev]               # + pytest, ruff
+```
+
+---
+
+## Hardware (RTL)
+
+The RTL implementation is in `hardware/rtl/systolic_array.v`:
+
+- **Size**: 4×4 processing elements
+- **Data width**: 8-bit inputs, 32-bit accumulator
+- **Dataflow**: Weight-stationary
+- **Verified**: 1033 test vectors pass
+
+### Simulate with Icarus Verilog
+
+```bash
+cd hardware
+iverilog -o sim.vvp rtl/systolic_array.v tb/professional_tb.v
+vvp sim.vvp
+```
+
+---
 
 ## Project Structure
 
 ```
 tinytpu/
-├── src/tinytpu/
-│   ├── __init__.py          # Lazy imports, Model & Pipeline shortcuts
-│   ├── core/                # Systolic array, quantization
-│   ├── inference/           # ONNX engine (50+ ops), model zoo
-│   ├── perception/          # Object detector, Kalman tracker
-│   ├── control/             # Safety controller, pipeline, robot interface
-│   ├── monitoring/          # Thermal, memory watchdog, black box recorder
-│   ├── numerical/           # Richardson, HITTER, Horner activations
-│   ├── hal/                 # Hardware Abstraction Layer (4 backends)
-│   └── cli/                 # Command-line tools
-├── tests/                   # 61 tests (pytest)
-├── hardware/rtl/            # Verilog systolic array (coming soon)
-├── demo_e2e.py              # End-to-end demo script
-├── pyproject.toml           # Package config
-└── LICENSE                  # MIT
+├── src/tinytpu/                 # Pip-installable package
+│   ├── __init__.py              # Lazy imports, Model & Pipeline shortcuts
+│   ├── core/                    # Systolic array, quantization
+│   ├── inference/               # ONNX engine (50+ ops), model zoo
+│   ├── perception/              # Object detector, Kalman tracker
+│   ├── control/                 # Safety controller, pipeline, robot interface
+│   ├── monitoring/              # Thermal, memory watchdog, black box recorder
+│   ├── numerical/               # Richardson, HITTER, Horner activations
+│   ├── hal/                     # Hardware Abstraction Layer (4 backends)
+│   └── cli/                     # Command-line tools
+├── software/                    # Legacy standalone scripts
+│   ├── tinytpu/
+│   │   ├── tpu_v2.py            # Core library with benchmarks
+│   │   ├── onnx_engine.py       # ONNX runtime (50+ operators)
+│   │   ├── unified_backend.py   # Auto backend selection
+│   │   ├── gpt2_optimized.py    # GPT-2 with KV-cache
+│   │   └── edge_ai.py           # Edge AI toolkit
+│   └── tests/
+│       ├── brutal_test.py       # 40 edge case tests
+│       └── production_validation.py
+├── hardware/
+│   ├── rtl/
+│   │   └── systolic_array.v     # 4×4 verified RTL
+│   └── tb/
+│       └── professional_tb.v    # 1033 test vectors
+├── tests/                       # Package tests (61 tests)
+├── demo_e2e.py                  # End-to-end demo script
+├── pyproject.toml               # Package config
+└── LICENSE                      # MIT
 ```
+
+---
 
 ## Development
 
@@ -239,32 +443,60 @@ tinytpu/
 git clone https://github.com/SKBiswas1998/tinytpu.git
 cd tinytpu
 pip install -e ".[dev]"
-pytest tests/ -v             # Run 61 tests
+pytest tests/ -v             # Run 61 package tests
 ruff check src/              # Lint
+
+# Legacy tests
+cd software
+python tests/brutal_test.py            # 40 edge case tests
+python tests/production_validation.py  # 16 validation tests
 ```
+
+---
 
 ## Roadmap
 
-- [x] Pip-installable package with CLI
+- [x] Systolic array RTL (4×4, weight-stationary, 1033 test vectors)
+- [x] Python API with unified backend (PyTorch/NumPy auto-selection)
+- [x] GPT-2 inference with KV-cache (10-15 tok/s)
+- [x] ONNX engine with 50+ operators (1.000 correlation with ONNX Runtime)
+- [x] INT8 quantization (75% memory reduction)
+- [x] Pip-installable package with CLI (7 commands)
 - [x] Hardware Abstraction Layer (Hailo, Coral, ONNX RT, NumPy)
 - [x] Async pipeline: camera → detect → track → control
 - [x] Safety controller with e-stop, watchdog, velocity ramping
 - [x] Kalman tracker with IoU matching
-- [x] Model zoo with auto-download
-- [x] End-to-end demo with real YOLOv8n
+- [x] Model zoo with auto-download (6 models)
+- [x] End-to-end demo with real YOLOv8n (7.3 FPS on CPU)
 - [x] Live webcam detection + tracking
 - [ ] Model conversion: `tinytpu convert model.onnx --target hailo8l`
 - [ ] FastAPI live dashboard
-- [ ] Raspberry Pi hardware-in-the-loop testing
+- [ ] Raspberry Pi + Hailo hardware-in-the-loop testing
 - [ ] ROS2 bridge
-- [ ] Verilog systolic array synthesis
+- [ ] Verilog systolic array FPGA synthesis
+- [ ] Larger models (TinyLlama, Phi-2)
 - [ ] TestPyPI / PyPI publication
+
+---
+
+## Use Cases
+
+1. **Autonomous Robots**: Follow-mode, patrol, obstacle avoidance on Raspberry Pi
+2. **Security Cameras**: Real-time detection with tracking and alerts
+3. **Education**: Learn TPU architecture with real systolic array RTL
+4. **Cheap LLM Inference**: Run GPT-2 at 15 tok/s without a GPU
+5. **Hardware Prototyping**: Verified RTL for FPGA deployment
+6. **Edge AI Research**: Experiment with quantization, Kalman tracking, safety systems
+
+---
 
 ## Acknowledgments
 
 - Numerical methods adapted from Killingbeck, *Microcomputer Algorithms* (1991)
 - YOLO models by [Ultralytics](https://github.com/ultralytics/ultralytics)
 - Inference powered by [ONNX Runtime](https://onnxruntime.ai/)
+- Google TPU architecture papers
+- HuggingFace for model weights
 
 ## Citation
 
