@@ -1,12 +1,97 @@
+# ──────────────────────────────────────────────
+# TinyTPU .gitignore
+# ──────────────────────────────────────────────
+
+# Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-dist/
+*$py.class
+*.so
+*.pyd
+
+# Distribution / packaging
 build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
 venv/
-.pytest_cache/
-*.vvp
-*.vcd
-*.bit
-.idea/
+ENV/
+
+# IDE
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ──────────────────────────────────────────────
+# ML / Model files (don't commit large models)
+# ──────────────────────────────────────────────
+*.onnx
+*.pt
+*.pth
+*.tflite
+*.hef
+*.engine
+*.plan
+*.bin
+!hardware/**/*.bin
+
+# Model cache
+models_cache/
+
+# ──────────────────────────────────────────────
+# Project-specific
+# ──────────────────────────────────────────────
+
+# Old code (pre-refactor)
+old/
+archive/
+*.bak
+
+# Demo outputs
+sample_scene.jpg
+sample_output.jpg
+capture_*.jpg
+*_detected.jpg
+*_detected.json
+*_tinytpu.jpg
+*_results.json
+
+# Scripts output
+scripts/*.log
+
+# Recordings
+recordings/
+*.jsonl
+
+# Secrets / config
+.env
+secrets.toml
