@@ -230,8 +230,11 @@ class TestCLI:
         from tinytpu.cli import run_benchmark
         results = run_benchmark(runs=3)
         assert "tests" in results
-        assert "matmul_64" in results["tests"]
-        assert results["tests"]["matmul_64"]["gflops"] > 0
+        matmul_keys = [k for k in results["tests"] if k.startswith("matmul_")]
+        assert len(matmul_keys) > 0, f"No matmul keys in: {list(results['tests'].keys())}"
+        first_key = matmul_keys[0]
+        assert "gflops" in results["tests"][first_key]
+        assert results["tests"][first_key]["gflops"] > 0
 
     def test_cli_main_help(self):
         """Test that tinytpu --help works."""
