@@ -320,10 +320,16 @@ class Model:
             import cv2
             resized = cv2.resize(image, (new_w, new_h))
         except ImportError:
-            from PIL import Image
-            pil_img = Image.fromarray(image)
-            pil_img = pil_img.resize((new_w, new_h), Image.BILINEAR)
-            resized = np.array(pil_img)
+            try:
+                from PIL import Image
+                pil_img = Image.fromarray(image)
+                pil_img = pil_img.resize((new_w, new_h), Image.BILINEAR)
+                resized = np.array(pil_img)
+            except ImportError:
+                # Pure numpy nearest-neighbor resize (no cv2/PIL needed)
+                h_idx = np.linspace(0, h - 1, new_h).astype(int)
+                w_idx = np.linspace(0, w - 1, new_w).astype(int)
+                resized = image[np.ix_(h_idx, w_idx)]
         padded = np.full((target_h, target_w, 3), 114, dtype=np.uint8)
         pad_h = (target_h - new_h) // 2
         pad_w = (target_w - new_w) // 2
