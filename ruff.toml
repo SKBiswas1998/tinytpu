@@ -1,0 +1,14 @@
+# Ruff linter configuration
+line-length = 150
+
+[lint]
+ignore = [
+    "F401",   # imported but unused
+    "F841",   # local variable assigned but never used
+    "F541",   # f-string without placeholders
+    "E401",   # multiple imports on one line
+    "E501",   # line too long
+    "E702",   # multiple statements on one line
+    "F702",   # multiple statements on one line (syntax)
+    "I001",   # import block unsorted
+]
