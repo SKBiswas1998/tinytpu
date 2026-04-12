@@ -23,41 +23,58 @@ import numpy as np
 logger = logging.getLogger("tinytpu.inference.model_zoo")
 
 MODEL_REGISTRY: Dict[str, dict] = {
+    "yolov5n": {
+        "task": "detection", "format": "onnx", "size": "3.9 MB",
+        "url": "https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5n.onnx",
+        "input_size": (1, 3, 640, 640), "classes": 80,
+        "description": "YOLOv5 Nano - fastest, best for Pi (direct ONNX)",
+    },
+    "yolov5s": {
+        "task": "detection", "format": "onnx", "size": "14 MB",
+        "url": "https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5s.onnx",
+        "input_size": (1, 3, 640, 640), "classes": 80,
+        "description": "YOLOv5 Small - balanced speed/accuracy (direct ONNX)",
+    },
     "yolov8n": {
         "task": "detection", "format": "onnx", "size": "6.2 MB",
         "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt",
+        "fallback_url": None,
         "input_size": (1, 3, 640, 640), "classes": 80,
-        "description": "YOLOv8 Nano - fastest, best for Pi",
+        "description": "YOLOv8 Nano - requires ultralytics for first-time export",
     },
     "yolov8s": {
         "task": "detection", "format": "onnx", "size": "22 MB",
         "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt",
+        "fallback_url": None,
         "input_size": (1, 3, 640, 640), "classes": 80,
-        "description": "YOLOv8 Small - balanced speed/accuracy",
+        "description": "YOLOv8 Small - requires ultralytics for first-time export",
     },
     "yolov8m": {
         "task": "detection", "format": "onnx", "size": "52 MB",
         "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt",
+        "fallback_url": None,
         "input_size": (1, 3, 640, 640), "classes": 80,
-        "description": "YOLOv8 Medium - higher accuracy, needs GPU/NPU",
+        "description": "YOLOv8 Medium - requires ultralytics for first-time export",
     },
     "mobilenetv2": {
         "task": "classification", "format": "onnx", "size": "14 MB",
         "url": "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12.onnx",
         "input_size": (1, 3, 224, 224), "classes": 1000,
-        "description": "MobileNetV2 - lightweight classification",
+        "description": "MobileNetV2 - lightweight classification (direct ONNX)",
     },
     "yolov8n-pose": {
         "task": "pose", "format": "onnx", "size": "6.7 MB",
         "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-pose.pt",
+        "fallback_url": None,
         "input_size": (1, 3, 640, 640), "classes": 1,
-        "description": "YOLOv8 Nano Pose - human keypoints",
+        "description": "YOLOv8 Nano Pose - requires ultralytics for first-time export",
     },
     "yolov8n-seg": {
         "task": "segmentation", "format": "onnx", "size": "6.8 MB",
         "url": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-seg.pt",
+        "fallback_url": None,
         "input_size": (1, 3, 640, 640), "classes": 80,
-        "description": "YOLOv8 Nano Seg - instance segmentation",
+        "description": "YOLOv8 Nano Seg - requires ultralytics for first-time export",
     },
 }
 

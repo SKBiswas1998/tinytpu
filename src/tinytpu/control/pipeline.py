@@ -10,6 +10,7 @@ Usage:
 import time
 import threading
 import logging
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
@@ -81,9 +82,9 @@ class Pipeline:
         self._latest_tracks = []
         self._frame_event = threading.Event()
         self._start_time = 0.0
-        self._capture_times = []
-        self._inference_times = []
-        self._control_times = []
+        self._capture_times = deque(maxlen=100)
+        self._inference_times = deque(maxlen=100)
+        self._control_times = deque(maxlen=100)
 
     def _init_components(self):
         from tinytpu.inference.model_zoo import Model
@@ -158,8 +159,6 @@ class Pipeline:
                     self._latest_frame = frame
                 self._frame_event.set()
                 self._capture_times.append(time.perf_counter() - t0)
-                if len(self._capture_times) > 100:
-                    self._capture_times = self._capture_times[-50:]
         except ImportError:
             self._running = False
         finally:
@@ -192,8 +191,6 @@ class Pipeline:
             except Exception as e:
                 logger.error(f"Inference error: {e}")
             self._inference_times.append(time.perf_counter() - t0)
-            if len(self._inference_times) > 100:
-                self._inference_times = self._inference_times[-50:]
 
     def _control_loop(self):
         period = 1.0 / self.config.control_hz
@@ -219,8 +216,6 @@ class Pipeline:
             if self.config.on_command:
                 self.config.on_command(self._state.command_linear, self._state.command_angular)
             self._control_times.append(time.perf_counter() - t0)
-            if len(self._control_times) > 100:
-                self._control_times = self._control_times[-50:]
             self._update_state(detections, tracks)
             sleep_time = period - (time.perf_counter() - t0)
             if sleep_time > 0:
@@ -278,11 +273,11 @@ class Pipeline:
             self._state.num_tracks = len(tracks)
             self._state.uptime_seconds = time.monotonic() - self._start_time
             if self._capture_times:
-                self._state.fps_capture = 1.0 / max(0.001, np.mean(self._capture_times[-10:]))
+                self._state.fps_capture = 1.0 / max(0.001, np.mean(list(self._capture_times)[-10:]))
             if self._inference_times:
-                self._state.fps_inference = 1.0 / max(0.001, np.mean(self._inference_times[-10:]))
+                self._state.fps_inference = 1.0 / max(0.001, np.mean(list(self._inference_times)[-10:]))
             if self._control_times:
-                self._state.fps_control = 1.0 / max(0.001, np.mean(self._control_times[-10:]))
+                self._state.fps_control = 1.0 / max(0.001, np.mean(list(self._control_times)[-10:]))
             if self._thermal:
                 self._state.thermal_temp = self._thermal.get_temp()
 

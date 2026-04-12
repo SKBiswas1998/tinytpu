@@ -1,7 +1,7 @@
 """
 TinyTPU ONNX Engine - Pure-Python ONNX runtime.
 
-Supports 50+ operators. Serves as universal fallback when ONNX Runtime
+Supports 46 operators. Serves as universal fallback when ONNX Runtime
 C++ is not available (e.g., ARM boards without pre-built wheels).
 
 Note: For best performance, install onnxruntime. This engine is ~3-10x slower
@@ -16,7 +16,7 @@ logger = logging.getLogger("tinytpu.inference.engine")
 
 
 class TinyTPUEngine:
-    """Pure-Python ONNX inference engine (50+ operators)."""
+    """Pure-Python ONNX inference engine (46 operators)."""
 
     def __init__(self, model_path: str, quantize: bool = False):
         self.model_path = model_path
