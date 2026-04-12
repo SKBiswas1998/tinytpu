@@ -52,7 +52,7 @@ class KalmanFilter2D:
         z = np.array(measurement, dtype=np.float64)
         y = z - self.H @ self.x
         S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
+        K = np.linalg.solve(S.T, (self.P @ self.H.T).T).T
         self.x = self.x + K @ y
         self.P = (np.eye(8) - K @ self.H) @ self.P
         self.x[2] = max(self.x[2], 1.0)

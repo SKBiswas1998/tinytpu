@@ -137,6 +137,85 @@ tinytpu version           # Version and dependency info
 
 ---
 
+---
+
+## Tensor Decomposition for Model Compression
+
+Weight compression via tensor decomposition methods from Liu et al., *Tensor Computation for Data Analysis* (Springer 2022) combined with Padé approximants from Killingbeck Ch.4. Enables fitting full transformer models into edge SRAM.
+
+### Tensor Train (TT) Weight Compression
+
+Decomposes weight matrices into chains of small 3rd-order cores via Sequential SVD (Algorithm 11, Liu Ch.2 §2.6.2). Each core multiplication maps naturally to TinyTPU's systolic array.
+
+```python
+from tensor_train import TTLinear, compress_linear_layer
+
+# Compress a transformer FC layer (768×768 = 590K params)
+W = model.attention.q_proj.weight.numpy()
+tt = TTLinear(W, input_shape=(4, 4, 48), output_shape=(4, 4, 48), max_rank=16)
+
+print(tt)  # TTLinear(768×768 → TT d=3, params 589,824 → 10,752 (54.9× compression))
+
+# Inference: computes W @ x via sequential small matmuls
+y = tt.forward(x)
+
+# SmolLM 135M Q/K/V projection: 576×576
+#   Original:   331,776 params
+#   TT rank-16:  18,432 params → 18.0× compression
+```
+
+### Tucker Conv Kernel Compression
+
+Decomposes 4D conv kernels along channel dimensions (Liu Ch.10 §10.2.1). Converts one large convolution into a sequence of smaller projections.
+
+```python
+from tensor_train import TuckerConv, compress_conv_kernel
+
+# Compress a YOLO-class conv layer
+K = model.backbone.conv5.weight.numpy()  # (256, 128, 3, 3)
+result = compress_conv_kernel(K, rank_ratio=0.25)
+
+# 294,912 params → 38,912 params (7.6× compression)
+# Real pretrained weights compress much better than random
+```
+
+### Padé Approximant Activations
+
+Rational function approximations P(x)/Q(x) that converge to correct asymptotes, unlike polynomials which diverge in the tails. Numerically-fit via least-squares on 10K sample points (Killingbeck Ch.4 §4.11-4.28).
+
+```python
+from tensor_train import PadeActivations
+
+y = PadeActivations.sigmoid_pade(x)     # [3/3] Padé, max error 0.0016
+y = PadeActivations.sigmoid_pade_55(x)  # [5/5] Padé, max error 0.000014
+y = PadeActivations.tanh_pade(x)        # [5/4] Padé, max error 0.0014
+y = PadeActivations.silu_pade(x)        # For LLM FFN (Llama-compatible)
+y = PadeActivations.gelu_pade(x)        # For transformer activations
+
+# Padé [3/3] sigmoid: 0.0016 error with 5 multiply + 1 divide
+# Horner degree-7:    0.008  error with 7 multiply
+# → 5× more accurate with fewer ops
+```
+
+### Richardson + TT Integration (72× Compression Target)
+
+Combines both books: TT compression (Liu) + Richardson extrapolation (Killingbeck) + INT8 quantization for maximum compression with accuracy recovery.
+
+```python
+from tensor_train import RichardsonTTLinear
+
+# Full pipeline: TT decompose → INT8 quantize → Richardson correct
+rtt = RichardsonTTLinear(W, max_rank=16, n_richardson_passes=2)
+y = rtt.forward(x)
+
+report = rtt.accuracy_report(x_test)
+# Pipeline: TT (18×) × INT8 (4×) = 72× over FP32
+# Richardson extrapolation recovers quantization accuracy
+# SmolLM 135M: 540 MB (FP32) → ~7.5 MB target
+```
+
+---
+
 ## Benchmarks
 
 <p align="center">

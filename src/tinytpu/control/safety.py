@@ -95,7 +95,7 @@ class SafetyController:
                     det_h = getattr(det, "y2", 0) - getattr(det, "y1", 0)
                     det_area = max(0, det_w) * max(0, det_h)
                     if det_area / frame_area > self.min_proximity:
-                        return SafeCommand(0, raw_ang, True, "proximity_stop")
+                        return SafeCommand(0, 0, False, "proximity_stop")
 
             lin = max(-self.max_linear, min(self.max_linear, raw_lin))
             ang = max(-self.max_angular, min(self.max_angular, raw_ang))

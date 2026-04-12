@@ -92,16 +92,10 @@ def main():
             shutil.move(export_path, str(dest))
             print(f"  Exported to: {dest}")
         except ImportError:
-            print("  ultralytics not installed. Installing...")
-            os.system(f"{sys.executable} -m pip install ultralytics -q")
-            from ultralytics import YOLO
-            yolo = YOLO(f"{args.model}.pt")
-            export_path = yolo.export(format="onnx", imgsz=640)
-            import shutil
-            cache_dir = zoo.cache_dir / args.model
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            dest = cache_dir / f"{args.model}.onnx"
-            shutil.move(export_path, str(dest))
+            print("  ERROR: ultralytics is required to export YOLOv8 models to ONNX.")
+            print("  Install it with: pip install ultralytics")
+            print("  Or use a model that ships as ONNX directly: yolov5n, yolov5s, mobilenetv2")
+            sys.exit(1)
 
     model = Model(args.model, conf_threshold=args.confidence)
     load_ms = (time.perf_counter() - t0) * 1000
